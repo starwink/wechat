@@ -89,6 +89,10 @@ class AccessToken
     // API
     const API_TOKEN_GET = 'https://api.weixin.qq.com/cgi-bin/token';
 
+	public $getTokenType='Official';
+	public $getTokenUrl='';
+	public $getTokenParam=array();
+
     /**
      * Constructor.
      *
@@ -103,29 +107,35 @@ class AccessToken
         $this->cache = $cache;
     }
 
-    /**
-     * Get token from WeChat API.
-     *
-     * @param bool $forceRefresh
-     *
-     * @return string
-     */
-    public function getToken($forceRefresh = false)
-    {
-        $cacheKey = $this->getCacheKey();
-        $cached = $this->getCache()->fetch($cacheKey);
+	/**
+	 * Get token
+	 *
+	 * @param bool $forceRefresh
+	 *
+	 * @return string
+	 */
+	public function getToken($forceRefresh = false)
+	{
+		if($this->getTokenType=='ISZAPP'){
+			$token = $this->getTokenFromISZAppService($this->getTokenUrl,$this->getTokenParam);
+			return $token;
+		}else{
+			$cacheKey = $this->getCacheKey();
+			$cached = $this->getCache()->fetch($cacheKey);
 
-        if ($forceRefresh || empty($cached)) {
-            $token = $this->getTokenFromServer();
+			if ($forceRefresh || empty($cached)) {
+				$token = $this->getTokenFromServer();
 
-            // XXX: T_T... 7200 - 1500
-            $this->getCache()->save($cacheKey, $token[$this->tokenJsonKey], $token['expires_in'] - 1500);
+				// XXX: T_T... 7200 - 1500
+				$this->getCache()->save($cacheKey, $token[$this->tokenJsonKey], $token['expires_in'] - 1500);
 
-            return $token[$this->tokenJsonKey];
-        }
+				return $token[$this->tokenJsonKey];
+			}
+			return $cached;
+		}
+	}
 
-        return $cached;
-    }
+
 
     /**
      * 设置自定义 token.
@@ -245,6 +255,35 @@ class AccessToken
 
         return $token;
     }
+
+	/**
+	 * 通过公司内部服务获取Token
+	 * @param       $url
+	 * @param array $params
+	 *
+	 * @return mixed
+	 * @throws HttpException
+	 */
+	public function getTokenFromISZAppService($url,$params=array()){
+		$http = $this->getHttp();
+		$token = $http->parseJSON($http->get($url, $params));
+
+		if ($token['code']!==0) {
+			throw new HttpException('ISZ Service Error. response: '.json_encode($token, JSON_UNESCAPED_UNICODE));
+		}
+
+		if ($token['obj']['app_id']!==$this->appId) {
+			throw new HttpException('ISZ Service AppId unconformity. response: '.json_encode($token, JSON_UNESCAPED_UNICODE));
+		}
+
+		if (empty($token['obj']['access_token'])) {
+			throw new HttpException('Request AccessToken fail. response: '.json_encode($token, JSON_UNESCAPED_UNICODE));
+		}
+
+		return $token['obj']['access_token'];
+
+	}
+
 
     /**
      * Return the http instance.
